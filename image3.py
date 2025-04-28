@@ -6,7 +6,7 @@ import os
 class ImageConverterApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Lossless Image Compressor & Converter")
+        self.root.title("Lossless Image Converter")
         self.root.geometry("600x500")
         self.root.configure(bg="#f0f0f0")
 
