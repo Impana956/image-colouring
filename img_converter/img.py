@@ -1,9 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, flash, redirect
 import os
 import fitz  # PyMuPDF
-from PIL import Image
-import io
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
@@ -16,55 +13,18 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['CONVERTED_FOLDER'] = CONVERTED_FOLDER
 
-MAX_SIZE_KB = 50
-
-def compress_image(input_image, output_path, format_choice):
-    quality = 85 if format_choice == "jpg" else None
-    compress_level = 9 if format_choice == "png" else None
-
-    img = input_image.convert("RGBA")
-    white_bg = Image.new("RGB", img.size, (255, 255, 255))
-    alpha = img.getchannel("A")
-    white_bg.paste(img, mask=alpha)
-
-    buffer = io.BytesIO()
-
-    if format_choice == "jpg":
-        while quality > 10:
-            buffer.seek(0)
-            buffer.truncate(0)
-            white_bg.save(buffer, format="JPEG", quality=quality, optimize=True)
-            size_kb = buffer.tell() / 1024
-            if size_kb <= MAX_SIZE_KB:
-                break
-            quality -= 5
-    elif format_choice == "png":
-        while compress_level >= 0:
-            buffer.seek(0)
-            buffer.truncate(0)
-            white_bg.save(buffer, format="PNG", compress_level=compress_level, optimize=True)
-            size_kb = buffer.tell() / 1024
-            if size_kb <= MAX_SIZE_KB:
-                break
-            compress_level -= 1
-
-    with open(output_path, "wb") as f:
-        f.write(buffer.getvalue())
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         file = request.files.get("file")
         format_choice = request.form.get("format")
-        desired_name = request.form.get("filename", "converted_file")
         pdf_img_format = request.form.get("pdf_img_format", "jpg")
 
         if not file or file.filename == '':
             flash("No file selected.")
             return redirect(request.url)
 
-        filename = secure_filename(file.filename)
-        desired_name = secure_filename(desired_name)
+        filename = file.filename
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
@@ -73,38 +33,56 @@ def index():
 
         try:
             if ext == ".pdf" and format_choice in ["jpg", "png"]:
+                # Convert PDF to image using PyMuPDF
                 doc = fitz.open(filepath)
+                output_filename = f"{base_name}.{pdf_img_format}"
+                output_path = os.path.join(app.config['CONVERTED_FOLDER'], output_filename)
+
                 page = doc.load_page(0)
                 pix = page.get_pixmap()
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-                output_filename = f"{desired_name}.{pdf_img_format}"
-                output_path = os.path.join(app.config['CONVERTED_FOLDER'], output_filename)
-                compress_image(img, output_path, pdf_img_format)
+                pix.save(output_path)
 
                 return render_template("index.html", paths=[output_filename])
 
             elif format_choice == "pdf":
+                # Convert image to PDF using Pillow and img2pdf with compression
                 from PIL import Image as PILImage
                 import img2pdf
 
                 img = PILImage.open(filepath).convert("RGB")
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{desired_name}_temp.jpg")
-                img.save(temp_path, quality=85, optimize=True)
 
-                output_pdf_path = os.path.join(app.config['CONVERTED_FOLDER'], f"{desired_name}.pdf")
+                # Resize to reduce file size
+                MAX_WIDTH, MAX_HEIGHT = 1024, 1024
+                img.thumbnail((MAX_WIDTH, MAX_HEIGHT))
+
+                # Save as compressed JPEG
+                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_name}_temp.jpg")
+                img.save(temp_path, format="JPEG", quality=60, optimize=True)
+
+                # Convert to PDF
+                output_pdf_path = os.path.join(app.config['CONVERTED_FOLDER'], f"{base_name}.pdf")
                 with open(output_pdf_path, "wb") as f:
                     f.write(img2pdf.convert(temp_path))
 
                 os.remove(temp_path)
-                return render_template("index.html", paths=[f"{desired_name}.pdf"])
+                return render_template("index.html", paths=[f"{base_name}.pdf"])
 
             else:
-                img = Image.open(filepath)
-                output_filename = f"{desired_name}.{format_choice}"
+                # Convert image to JPG or PNG
+                from PIL import Image
+
+                img = Image.open(filepath).convert("RGBA")
+                white_bg = Image.new("RGB", img.size, (255, 255, 255))
+                alpha = img.getchannel("A")
+                white_bg.paste(img, mask=alpha)
+
+                output_filename = f"{base_name}.{format_choice}"
                 output_path = os.path.join(app.config['CONVERTED_FOLDER'], output_filename)
 
-                compress_image(img, output_path, format_choice)
+                if format_choice == "jpg":
+                    white_bg.save(output_path, "JPEG", quality=70, optimize=True)
+                elif format_choice == "png":
+                    white_bg.save(output_path, "PNG", compress_level=9)
 
                 return render_template("index.html", paths=[output_filename])
 
@@ -116,13 +94,7 @@ def index():
 
 @app.route("/converted/<filename>")
 def download_file(filename):
-    user_friendly_name = request.args.get("download_as", filename)
-    return send_from_directory(
-        app.config['CONVERTED_FOLDER'],
-        filename,
-        as_attachment=True,
-        download_name=user_friendly_name
-    )
+    return send_from_directory(app.config['CONVERTED_FOLDER'], filename, as_attachment=True)
 
 if __name__ == "__main__":
     app.run(debug=True)
