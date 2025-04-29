@@ -1,55 +1,19 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Image & PDF Converter</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h1>Image & PDF Converter</h1>
-        <form action="/" method="post" enctype="multipart/form-data">
-            <label>Select a file:</label>
-            <input type="file" name="file" required>
+document.addEventListener("DOMContentLoaded", function () {
+    const fileInput = document.getElementById("file");
+    const preview = document.getElementById("preview");
 
-            <label>Convert to:</label>
-            <select name="format" id="format-select">
-                <option value="jpg">JPG</option>
-                <option value="png">PNG</option>
-                <option value="pdf">PDF</option>
-            </select>
-
-            <div id="pdf-img-format" style="display: none;">
-                <label>PDF to Image Format:</label>
-                <select name="pdf_img_format">
-                    <option value="jpg">JPG</option>
-                    <option value="png">PNG</option>
-                </select>
-            </div>
-
-            <button type="submit">Convert</button>
-        </form>
-
-        {% with messages = get_flashed_messages() %}
-        {% if messages %}
-            <ul class="flash">
-                {% for message in messages %}
-                    <li>{{ message }}</li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-        {% endwith %}
-
-        {% if paths %}
-            <h3>Download your converted file(s):</h3>
-            <ul>
-                {% for filename in paths %}
-                    <li><a href="{{ url_for('download_file', filename=filename) }}">{{ filename }}</a></li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-    </div>
-
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+    fileInput.addEventListener("change", function (event) {
+        const file = event.target.files[0];
+        if (file && file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                preview.src = e.target.result;
+                preview.style.display = "block";
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.src = "#";
+            preview.style.display = "none";
+        }
+    });
+});
